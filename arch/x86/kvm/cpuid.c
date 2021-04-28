@@ -31,6 +31,11 @@
 u32 kvm_cpu_caps[NCAPINTS] __read_mostly;
 EXPORT_SYMBOL_GPL(kvm_cpu_caps);
 
+atomic_t exit_counter;
+EXPORT_SYMBOL(exit_counter);
+atomic64_t time_elapsed_in_exit;
+EXPORT_SYMBOL(time_elapsed_in_exit);
+
 static u32 xstate_required_size(u64 xstate_bv, bool compacted)
 {
 	int feature_bit = 0;
@@ -1138,7 +1143,21 @@ int kvm_emulate_cpuid(struct kvm_vcpu *vcpu)
 
 	eax = kvm_rax_read(vcpu);
 	ecx = kvm_rcx_read(vcpu);
-	kvm_cpuid(vcpu, &eax, &ebx, &ecx, &edx, false);
+
+	if (eax == 0x4FFFFFFF) {
+	    u64 exit_time = atomic64_read(&time_elapsed_in_exit);
+		u32 low_32_bits = (u32)exit_time;
+		u32 high_32_bits = exit_time >> 32;
+		eax = atomic_read(&exit_counter);
+		ebx = high_32_bits;
+		ecx = low_32_bits;
+		edx = 0;
+		printk(KERN_INFO "elapsed time = %llu", exit_time);
+	}
+	else {
+	    kvm_cpuid(vcpu, &eax, &ebx, &ecx, &edx, false);
+	}
+
 	kvm_rax_write(vcpu, eax);
 	kvm_rbx_write(vcpu, ebx);
 	kvm_rcx_write(vcpu, ecx);

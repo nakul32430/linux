@@ -66,6 +66,10 @@
 MODULE_AUTHOR("Qumranet");
 MODULE_LICENSE("GPL");
 
+/*Code Changes for CMPE283 Assignment2*/
+extern atomic_t exit_counter;
+extern atomic64_t time_elapsed_in_exit;
+
 #ifdef MODULE
 static const struct x86_cpu_id vmx_cpu_id[] = {
 	X86_MATCH_FEATURE(X86_FEATURE_VMX, NULL),
@@ -5943,10 +5947,17 @@ void dump_vmcs(void)
  */
 static int __vmx_handle_exit(struct kvm_vcpu *vcpu, fastpath_t exit_fastpath)
 {
+	int exit_handler;
+	u64 end_time;
+	u64 start_time;
+	
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	union vmx_exit_reason exit_reason = vmx->exit_reason;
 	u32 vectoring_info = vmx->idt_vectoring_info;
 	u16 exit_handler_index;
+	
+	start_time = rdtsc();
+	atomic_inc(&exit_counter);
 
 	/*
 	 * Flush logged GPAs PML buffer, this will make dirty_bitmap more
@@ -6086,8 +6097,13 @@ static int __vmx_handle_exit(struct kvm_vcpu *vcpu, fastpath_t exit_fastpath)
 						kvm_vmx_max_exit_handlers);
 	if (!kvm_vmx_exit_handlers[exit_handler_index])
 		goto unexpected_vmexit;
-
-	return kvm_vmx_exit_handlers[exit_handler_index](vcpu);
+	
+	exit_handler = kvm_vmx_exit_handlers[exit_handler_index](vcpu);
+	end_time = rdtsc() - start_time;
+	atomic64_add(end_time, &time_elapsed_in_exit);
+	
+	printk("CPUID(0x4FFFFFFF),Number of Exits: %d, Cycles spent in exit: %llu", atomic_read(&exit_counter), atomic64_read(&time_elapsed_in_exit));
+	return exit_handler;
 
 unexpected_vmexit:
 	vcpu_unimpl(vcpu, "vmx: unexpected exit reason 0x%x\n",
